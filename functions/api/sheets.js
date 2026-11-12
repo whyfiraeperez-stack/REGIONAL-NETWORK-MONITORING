@@ -21,7 +21,7 @@ export async function onRequestGet({request,env}){
  try{
   const access=await token(env), names=requested?[requested]:ALLOWED;
   const pairs=await Promise.all(names.map(async name=>{
-   const range="'"+name.replace(/'/g,"''")+"'";
+   const range="'"+name.replace(/'/g,"''")+"'!A:ZZ";
    const endpoint="https://sheets.googleapis.com/v4/spreadsheets/"+env.GOOGLE_SPREADSHEET_ID+"/values/"+encodeURIComponent(range)+"?valueRenderOption=FORMATTED_VALUE";
    const response=await fetch(endpoint,{headers:{authorization:"Bearer "+access}});
    const body=await response.json();if(!response.ok)throw new Error(name+": "+(body.error?.message||"Google Sheets API error"));
