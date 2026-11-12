@@ -23,3 +23,6 @@ The frontend calls same-origin `/api/sheets`. Google credentials are only read b
 Dashboard polling interval: 30 seconds. It displays last successful synchronization time and retains previously loaded data after a subsequent request fails.
 
 DAILY REPORT is treated as the KPI source when its values appear as recognizable label/value pairs. Confirm the actual sheet layout and adjust KPI mapping if necessary.
+
+## GitHub Actions deployment
+The workflow builds on pushes to `main`. To enable the deployment step, add repository Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Create the Cloudflare Pages project named `bicol-network-monitoring` first, or create it during initial Cloudflare setup. Until those two GitHub secrets exist, the build runs and the deployment step is skipped.
