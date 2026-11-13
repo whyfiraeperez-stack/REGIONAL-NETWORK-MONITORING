@@ -29,3 +29,6 @@ This repository is intended to deploy through Cloudflare Pages Git integration. 
 
 ## Cloudflare Pages deploy settings
 For a Cloudflare Pages project connected directly to Git, use build command `npm run build` and output directory `dist`. Leave the custom Deploy command empty so Pages performs its native deployment automatically. If a custom Deploy command is required, use `npx wrangler pages deploy dist --project-name=bicol-network-monitoring` — never `npx wrangler deploy`, which targets Workers and expects a Worker entry point or Worker assets configuration.
+
+
+<!-- native-pages-trigger-check -->
