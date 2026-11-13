@@ -26,3 +26,6 @@ DAILY REPORT is treated as the KPI source when its values appear as recognizable
 
 ## GitHub Actions deployment
 The workflow builds on pushes to `main`. To enable the deployment step, add repository Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Create the Cloudflare Pages project named `bicol-network-monitoring` first, or create it during initial Cloudflare setup. Until those two GitHub secrets exist, the build runs and the deployment step is skipped.
+
+## Cloudflare Pages deploy settings
+For a Cloudflare Pages project connected directly to Git, use build command `npm run build` and output directory `dist`. Leave the custom Deploy command empty so Pages performs its native deployment automatically. If a custom Deploy command is required, use `npx wrangler pages deploy dist --project-name=bicol-network-monitoring` — never `npx wrangler deploy`, which targets Workers and expects a Worker entry point or Worker assets configuration.
