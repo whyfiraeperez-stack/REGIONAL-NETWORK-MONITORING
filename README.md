@@ -24,8 +24,8 @@ Dashboard polling interval: 30 seconds. It displays last successful synchronizat
 
 DAILY REPORT is treated as the KPI source when its values appear as recognizable label/value pairs. Confirm the actual sheet layout and adjust KPI mapping if necessary.
 
-## GitHub Actions deployment
-The workflow builds on pushes to `main`. To enable the deployment step, add repository Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Create the Cloudflare Pages project named `bicol-network-monitoring` first, or create it during initial Cloudflare setup. Until those two GitHub secrets exist, the build runs and the deployment step is skipped.
+## Cloudflare Pages native Git deployment
+This repository is intended to deploy through Cloudflare Pages Git integration. Connect the GitHub repository `whyfiraeperez-stack/REGIONAL-NETWORK-MONITORING` with production branch `main`, build command `npm run build`, and build output directory `dist`. Leave any custom deploy command empty; Cloudflare Pages will deploy automatically after each push. No `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` GitHub Actions secrets are required for native Git integration.
 
 ## Cloudflare Pages deploy settings
 For a Cloudflare Pages project connected directly to Git, use build command `npm run build` and output directory `dist`. Leave the custom Deploy command empty so Pages performs its native deployment automatically. If a custom Deploy command is required, use `npx wrangler pages deploy dist --project-name=bicol-network-monitoring` — never `npx wrangler deploy`, which targets Workers and expects a Worker entry point or Worker assets configuration.
