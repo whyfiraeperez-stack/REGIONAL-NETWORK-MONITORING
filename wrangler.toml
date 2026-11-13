@@ -1,3 +1,6 @@
 name = "bicol-network-monitoring"
 pages_build_output_dir = "./dist"
 compatibility_date = "2026-11-12"
+
+[vars]
+GOOGLE_SPREADSHEET_ID = "1DgYA7-nM4DoVg70YOEGlu4Au7nb7xNpdSzyW8BZFsOg"
