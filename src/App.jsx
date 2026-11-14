@@ -52,8 +52,13 @@ const regionalOverviewCounts = (sheet) => {
   }
   if (downColumn < 0) continue;
 
+  // The TOTAL label is not guaranteed to sit in the section's first
+  // column (some report layouts place it one or more cells to the right).
+  // Search the entire section block, but stop before the next section.
   const totalRow = grid.slice(headerRowIndex + 1).find((row) =>
-   clean((row || [])[section.start]).toUpperCase() === "TOTAL"
+   (row || []).slice(section.start, nextStart).some((cell) =>
+    clean(cell).toUpperCase() === "TOTAL"
+   )
   );
   if (!totalRow) continue;
   const value = number(totalRow[downColumn]);
