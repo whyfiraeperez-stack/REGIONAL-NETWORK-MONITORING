@@ -5,12 +5,6 @@ let cachedSpreadsheetId = null;
 let cachedSheetTitles = null;
 let sheetTitlesExpiresAt = 0;
 
-// Keep successful sheet reads briefly in this Worker isolate. If Google Sheets
-// has a temporary outage, serve the last good copy for up to five minutes.
-const responseCache = new Map();
-const RESPONSE_CACHE_TTL_MS = 15 * 1000;
-const STALE_CACHE_TTL_MS = 5 * 60 * 1000;
-
 const b64url = (bytes) =>
   btoa(String.fromCharCode(...new Uint8Array(bytes)))
     .replace(/=/g, "")
@@ -187,48 +181,10 @@ async function loadSheetsFromGoogle(request, env) {
 
 
 async function sheetsResponse(request, env) {
-  const requested = new URL(request.url).searchParams.get("tab");
-  const canonicalRequested = requested === "GNOC UPDATE" ? "GNOC" : requested;
-  const cacheKey = env.GOOGLE_SPREADSHEET_ID + ":" + (canonicalRequested || "ALL");
-  const now = Date.now();
-  const cached = responseCache.get(cacheKey);
-
-  if (cached && now - cached.savedAt < RESPONSE_CACHE_TTL_MS) {
-    return Response.json(
-      { ...cached.payload, cached: true },
-      { headers: { "cache-control": "no-store", "x-dashboard-cache": "HIT" } },
-    );
-  }
-
-  const response = await loadSheetsFromGoogle(request, env);
-  const payload = await response.clone().json().catch(() => null);
-
-  if (response.ok && payload) {
-    responseCache.set(cacheKey, { payload, savedAt: Date.now() });
-    return Response.json(payload, {
-      headers: { "cache-control": "no-store", "x-dashboard-cache": "MISS" },
-    });
-  }
-
-  // A temporary upstream failure should not blank a dashboard that has
-  // already loaded good spreadsheet data in this Worker isolate.
-  if (cached && Date.now() - cached.savedAt < STALE_CACHE_TTL_MS) {
-    return Response.json(
-      {
-        ...cached.payload,
-        stale: true,
-        warning: payload?.error || "Temporary spreadsheet service issue; showing the last successful sync.",
-      },
-      {
-        headers: {
-          "cache-control": "no-store",
-          "x-dashboard-cache": "STALE",
-        },
-      },
-    );
-  }
-
-  return response;
+  // Do not retain full spreadsheet payloads in isolate memory. Large tabs
+  // can otherwise be duplicated by response cloning and cached objects,
+  // pushing the Worker over its 128 MB memory limit.
+  return loadSheetsFromGoogle(request, env);
 }
 
 export default {
