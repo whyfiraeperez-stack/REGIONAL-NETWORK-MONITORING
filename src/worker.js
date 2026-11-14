@@ -73,8 +73,7 @@ function parseSheet(values, includeRaw = false) {
 async function sheetsResponse(request, env) {
   const requested = new URL(request.url).searchParams.get("tab");
   const canonicalRequested = requested === "GNOC UPDATE" ? "GNOC" : requested;
-  const allowed = ["DATABASE", "DAILY REPORT", "OUTAGE ADVISORY", "GNOC"];
-  if (requested && !allowed.includes(canonicalRequested)) {
+  if (requested && !ALLOWED.includes(canonicalRequested)) {
     return Response.json({ error: "Unknown spreadsheet tab." }, { status: 400 });
   }
   if (!env.GOOGLE_SERVICE_ACCOUNT_JSON || !env.GOOGLE_SPREADSHEET_ID) {
@@ -101,7 +100,7 @@ async function sheetsResponse(request, env) {
     const availableTabs = (metadata.sheets || [])
       .map((sheet) => sheet.properties?.title)
       .filter(Boolean);
-    const names = requested ? [canonicalRequested] : allowed;
+    const names = requested ? [canonicalRequested] : ALLOWED;
     // Read tabs one at a time to keep peak memory usage within Worker limits.
     const pairs = [];
     for (const name of names) {
