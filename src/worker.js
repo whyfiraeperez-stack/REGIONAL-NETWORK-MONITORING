@@ -1,4 +1,4 @@
-const ALLOWED = ["DATABASE", "DAILY REPORT", "OUTAGE ADVISORY"];
+const ALLOWED = ["DATABASE", "DAILY REPORT"];
 let cachedGoogleToken = null;
 let googleTokenExpiresAt = 0;
 let cachedSpreadsheetId = null;
@@ -91,6 +91,12 @@ function parseDashboardColumns(valueRanges) {
   const statusValues = valueRanges[1]?.values || [];   // B: status
   const provinceValues = valueRanges[2]?.values || []; // E: type/province display
   const typeValues = valueRanges[3]?.values || [];     // H: BB / OLT classification
+  const countColumns = ["A", "B", "D", "E", "F", "G", "H", "I", "J", "Q"];
+  const columnCounts = Object.fromEntries(countColumns.map((column, index) => [
+    column,
+    (valueRanges[index]?.values || []).slice(1).reduce((count, row) =>
+      count + (String(row?.[0] ?? "").trim() !== "" ? 1 : 0), 0),
+  ]));
   const rowCount = Math.max(ticketValues.length, statusValues.length, provinceValues.length, typeValues.length);
   const rows = [];
   const counts = { BB: 0, OLT: 0, LCP: 0, NAP: 0 };
@@ -113,7 +119,7 @@ function parseDashboardColumns(valueRanges) {
       "TYPE/PROVINCE": String(provinceValues[i]?.[0] ?? "").trim(),
     });
   }
-  return { headers: ["TICKET NUMBER", "STATUS", "TYPE", "TYPE/PROVINCE"], rows, counts };
+  return { headers: ["TICKET NUMBER", "STATUS", "TYPE", "TYPE/PROVINCE"], rows, counts, columnCounts };
 }
 function parseSheet(values) {
   const headers = (values[0] || []).map((value, index) =>
@@ -184,7 +190,7 @@ async function loadSheetsFromGoogle(request, env) {
       if (view === "dashboard") {
         const escapedName = actualName.replace(/'/g, "''");
         const params = new URLSearchParams();
-        for (const column of ["A:A", "B:B", "E:E", "H:H"]) {
+        for (const column of ["A:A", "B:B", "E:E", "H:H", "D:D", "F:F", "G:G", "I:I", "J:J", "Q:Q"]) {
           params.append("ranges", "'" + escapedName + "'!" + column);
         }
         params.set("valueRenderOption", "FORMATTED_VALUE");
@@ -207,6 +213,7 @@ async function loadSheetsFromGoogle(request, env) {
         const summary = parseDashboardColumns(body.valueRanges || []);
         pairs.push([name, { headers: summary.headers, rows: summary.rows }]);
         pairs.push(["dashboardCounts", summary.counts]);
+        pairs.push(["columnCounts", summary.columnCounts]);
       } else {
         pairs.push([name, parseSheet(body.values || [])]);
       }
