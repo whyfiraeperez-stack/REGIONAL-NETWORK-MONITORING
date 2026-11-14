@@ -136,6 +136,15 @@ async function sheetsResponse(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/health") {
+      return Response.json({
+        ok: true,
+        service: "regional-network-monitoring",
+        timestamp: new Date().toISOString(),
+        spreadsheetConfigured: Boolean(env.GOOGLE_SPREADSHEET_ID),
+        credentialsConfigured: Boolean(env.GOOGLE_SERVICE_ACCOUNT_JSON),
+      }, { headers: { "cache-control": "no-store" } });
+    }
     if (url.pathname === "/api/sheets") {
       if (request.method !== "GET") {
         return new Response("Method not allowed", {
