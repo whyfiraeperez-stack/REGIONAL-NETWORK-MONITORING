@@ -8,10 +8,12 @@ const completeStatus = (s) => /complete|restored|closed|resolved/i.test(String(s
 const ageing = (start, end) => { const a = new Date(start); const b = end ? new Date(end) : new Date(); if (!start || isNaN(a.getTime()) || isNaN(b.getTime())) return "—"; const m = Math.max(0, Math.floor((b-a)/60000)); const d=Math.floor(m/1440), h=Math.floor((m%1440)/60), mm=m%60; return (d ? d+"d " : "")+h+"h "+mm+"m"; };
 const sheetRows = (s) => s?.rows || [];
 const sheetHeaders = (s) => s?.headers || [];
-function Table({ rows, headers, limit = 250 }) {
- if (!rows.length) return <div className="empty">No records returned for this tab.</div>;
- const cols = headers.length ? headers : Object.keys(rows[0] || {});
- return <div className="table-wrap"><table><thead><tr>{cols.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.slice(0,limit).map((r,i)=><tr key={i}>{cols.map((h)=><td key={h}>{String(r[h] ?? "—")}</td>)}</tr>)}</tbody></table>{rows.length>limit && <p className="muted small">Showing first {limit} of {rows.length} rows.</p>}</div>;
+function Table({ rows = [], headers = [], limit = 250 }) {
+ const safeRows = Array.isArray(rows) ? rows : [];
+ const safeHeaders = Array.isArray(headers) ? headers : [];
+ if (!safeRows.length) return <div className="empty">No records returned for this tab.</div>;
+ const cols = safeHeaders.length ? safeHeaders : Object.keys(safeRows[0] || {});
+ return <div className="table-wrap"><table><thead><tr>{cols.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{safeRows.slice(0,limit).map((r,i)=><tr key={i}>{cols.map((h)=><td key={h}>{String(r?.[h] ?? "—")}</td>)}</tr>)}</tbody></table>{safeRows.length>limit && <p className="muted small">Showing first {limit} of {safeRows.length} rows.</p>}</div>;
 }
 function csvDownload(rows, filename) {
  if (!rows.length) return;
