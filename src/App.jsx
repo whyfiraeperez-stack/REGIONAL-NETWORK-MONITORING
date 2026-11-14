@@ -3,7 +3,7 @@ const TABS = ["DASHBOARD", "OUTAGE ADVISORY", "DATABASE", "GNOC UPDATE", "GENERA
 const LOGO = "https://content.convergeict.com/assets/25c65629-d1ee-43a3-82bd-5bed31ecbf06.svg";
 const norm = (s) => String(s ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 const val = (row, names) => { for (const n of names) { const k = Object.keys(row || {}).find((x) => norm(x) === norm(n)); if (k && row[k] !== "" && row[k] != null) return String(row[k]).trim(); } return ""; };
-const runningStatus = (s) => /\b(running|open|pending|ongoing|in progress|active)\b/i.test(String(s || ""));
+const runningStatus = (s) => /\b(running|open|pending|ongoing|in progress|active|down)\b/i.test(String(s || ""));
 const completeStatus = (s) => /\b(completed|restored|closed|resolved)\b/i.test(String(s || ""));
 const ageing = (start, end) => { const a = new Date(start); const b = end ? new Date(end) : new Date(); if (!start || isNaN(a.getTime()) || isNaN(b.getTime())) return "—"; const m = Math.max(0, Math.floor((b-a)/60000)); const d=Math.floor(m/1440), h=Math.floor((m%1440)/60), mm=m%60; return (d ? d+"d " : "")+h+"h "+mm+"m"; };
 const sheetRows = (s) => s?.rows || [];
