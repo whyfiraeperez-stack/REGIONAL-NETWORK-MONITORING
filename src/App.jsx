@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-const TABS = ["DASHBOARD", "OUTAGE ADVISORY", "DATABASE", "GNOC UPDATE", "GENERATE REPORT"];
+const TABS = ["DASHBOARD", "OUTAGE ADVISORY", "DATABASE", "GENERATE REPORT"];
 const LOGO = "https://content.convergeict.com/assets/25c65629-d1ee-43a3-82bd-5bed31ecbf06.svg";
 const norm = (s) => String(s ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 const val = (row, names) => { for (const n of names) { const k = Object.keys(row || {}).find((x) => norm(x) === norm(n)); if (k && row[k] !== "" && row[k] != null) return String(row[k]).trim(); } return ""; };
@@ -56,7 +56,6 @@ export default function App() {
    if(tab==="DASHBOARD") requests=[["DATABASE","dashboard"]];
    else if(tab==="DATABASE"||tab==="GENERATE REPORT") requests=[["DATABASE",null]];
    else if(tab==="OUTAGE ADVISORY") requests=[["OUTAGE ADVISORY",null]];
-   else if(tab==="GNOC UPDATE") requests=[["GNOC",null]];
    const next={};let syncedAt=null;
    for(const [name,view] of requests){const result=await fetchSheetTab(name,view);next[name]=result.sheet;if(result.dashboardCounts)next.dashboardCounts=result.dashboardCounts;syncedAt=result.syncedAt||syncedAt;}
    setData(previous=>({...previous,...next}));
@@ -65,7 +64,7 @@ export default function App() {
   finally{syncInFlight.current=false;}
  },[tab]);
  useEffect(()=>{sync();},[sync]); useEffect(()=>{if(!auto||tab!=="DASHBOARD")return;const id=setInterval(sync,60000);return()=>clearInterval(id);},[auto,tab,sync]); useEffect(()=>{const id=setInterval(()=>setClock(new Date()),30000);return()=>clearInterval(id);},[]);
- const db=sheetRows(data.DATABASE), gnoc=sheetRows(data.GNOC), adv=sheetRows(data["OUTAGE ADVISORY"]);
+ const db=sheetRows(data.DATABASE), adv=sheetRows(data["OUTAGE ADVISORY"]);
  const tickets=useMemo(()=>db.map((r,i)=>{const statusText=val(r,["STATUS"]);const down=val(r,["DOWNTIME","DOWN TIME","START DATE"]);const restored=val(r,["DATE RESTORED","DATE RESTORE","RESTORED DATE","UPTIME"]);return {...r,__ticket:val(r,["TICKET NUMBER","TICKET NO","TICKET","TICKET ID","INTERNAL ID"])||("ROW-"+(i+1)),__status:runningStatus(statusText)?"RUNNING":completeStatus(statusText)?"COMPLETED":statusText.toUpperCase(),__type:["TYPE","OUTAGE TYPE","TYPE/PROVINCE","IMPACT"].map(name=>val(r,[name])).filter(Boolean).join(" ").toUpperCase(),__ageing:ageing(down,restored)};}),[db]);
  const running=tickets.filter(r=>r.__status==="RUNNING"), completed=tickets.filter(r=>r.__status==="COMPLETED");
  // Dashboard outage lists are driven only by DATABASE columns B (STATUS) and H (TYPE).
@@ -117,7 +116,6 @@ export default function App() {
  <section className="panel"><div className="panel-head"><h3>RUNNING TICKETS</h3><button className="text-button" onClick={()=>setTab("DATABASE")}>VIEW DATABASE →</button></div><Table rows={running.map(r=>({"Ticket ID":r.__ticket,"Status":r.__status,"Type":r.__type,"Ageing":r.__ageing,...r}))} limit={12}/></section></>}
  {tab==="OUTAGE ADVISORY"&&<section className="panel"><div className="panel-head"><h2>OUTAGE ADVISORY</h2><span>Source: OUTAGE ADVISORY tab</span></div><Table rows={adv} headers={sheetHeaders(data["OUTAGE ADVISORY"])}/></section>}
  {tab==="DATABASE"&&<section className="panel"><div className="panel-head"><div><h2>NETWORK TICKET DATABASE</h2><p className="muted">{filtered.length} matching · {tickets.length} total records</p></div><button className="button secondary" onClick={()=>csvDownload(filtered,"bicol-network-database.csv")}>EXPORT CSV</button></div><div className="filters"><input placeholder="Search ticket ID, last digits, node, municipality..." value={query} onChange={e=>setQuery(e.target.value)}/><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="ALL">All statuses</option><option value="RUNNING">Running</option><option value="COMPLETED">Completed</option></select><select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}><option value="ALL">All types</option>{["BB","OLT","LCP","NAP"].map(v=><option key={v}>{v}</option>)}</select></div><Table rows={filtered.map(({__ticket,__status,__type,__ageing,...r})=>({...r,"Ticket ID":__ticket,"Normalized Status":__status,"Outage Type":__type,"Ageing":__ageing}))}/></section>}
- {tab==="GNOC UPDATE"&&<section className="panel"><div className="panel-head"><h2>GNOC UPDATE</h2><span>{gnoc.length} records · live spreadsheet view</span></div><Table rows={gnoc} headers={sheetHeaders(data.GNOC)}/></section>}
  {tab==="GENERATE REPORT"&&<><div className="section-heading"><div><p className="eyebrow">OPERATIONS INTELLIGENCE</p><h2>Outage performance report</h2></div><button className="button primary" onClick={()=>csvDownload(report,"bicol-network-outage-report.csv")}>DOWNLOAD REPORT CSV</button></div><div className="kpis"><article className="kpi running"><span>TOTAL TICKETS</span><strong>{tickets.length}</strong></article><article className="kpi red"><span>RUNNING</span><strong>{running.length}</strong></article><article className="kpi green"><span>COMPLETED</span><strong>{completed.length}</strong></article><article className="kpi blue"><span>COMPLETION RATE</span><strong>{tickets.length?Math.round(completed.length/tickets.length*100):0}%</strong></article></div><section className="panel"><div className="panel-head"><h3>COMPLETED TICKETS · RESTORATION AGEING</h3></div><Table rows={completed.map(r=>({"Ticket ID":r.__ticket,"Status":r.__status,"Type":r.__type,"Downtime":val(r,["DOWNTIME","DOWN TIME"]),"Date Restored":val(r,["DATE RESTORED","DATE RESTORE","RESTORED DATE"]),"Ageing":r.__ageing}))}/></section><section className="panel"><div className="panel-head"><h3>RUNNING TICKETS · CURRENT AGEING</h3></div><Table rows={running.map(r=>({"Ticket ID":r.__ticket,"Status":r.__status,"Type":r.__type,"Downtime":val(r,["DOWNTIME","DOWN TIME"]),"Ageing":r.__ageing}))}/></section></>}
  <footer>Operational dashboard · Google Sheets is the source of truth · Auto-sync interval: 60 seconds</footer></main></div>;
 }
