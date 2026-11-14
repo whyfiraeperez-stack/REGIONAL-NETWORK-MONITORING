@@ -172,6 +172,12 @@ async function loadSheetsFromGoogle(request, env) {
       { headers: { "cache-control": "no-store" } },
     );
   } catch (error) {
+    console.error(JSON.stringify({
+      event: "google_sheets_read_failed",
+      error: error instanceof Error ? error.message : String(error),
+      requestedTab: requested || "ALL",
+      timestamp: new Date().toISOString(),
+    }));
     return Response.json(
       { error: error.message || "Unable to read Google Sheets." },
       { status: 502, headers: { "cache-control": "no-store" } },
@@ -227,25 +233,64 @@ async function sheetsResponse(request, env) {
 
 export default {
   async fetch(request, env) {
+    const startedAt = Date.now();
     const url = new URL(request.url);
-    if (url.pathname === "/api/health") {
-      return Response.json({
-        ok: true,
-        service: "regional-network-monitoring",
-        timestamp: new Date().toISOString(),
-        spreadsheetConfigured: Boolean(env.GOOGLE_SPREADSHEET_ID),
-        credentialsConfigured: Boolean(env.GOOGLE_SERVICE_ACCOUNT_JSON),
-      }, { headers: { "cache-control": "no-store" } });
-    }
-    if (url.pathname === "/api/sheets") {
-      if (request.method !== "GET") {
-        return new Response("Method not allowed", {
-          status: 405,
-          headers: { allow: "GET" },
-        });
+    let response;
+    try {
+      if (url.pathname === "/api/health") {
+        response = Response.json({
+          ok: true,
+          service: "regional-network-monitoring",
+          timestamp: new Date().toISOString(),
+          spreadsheetConfigured: Boolean(env.GOOGLE_SPREADSHEET_ID),
+          credentialsConfigured: Boolean(env.GOOGLE_SERVICE_ACCOUNT_JSON),
+        }, { headers: { "cache-control": "no-store" } });
+      } else if (url.pathname === "/api/sheets") {
+        if (request.method !== "GET") {
+          response = new Response("Method not allowed", {
+            status: 405,
+            headers: { allow: "GET" },
+          });
+        } else {
+          response = await sheetsResponse(request, env);
+        }
+      } else {
+        response = await env.ASSETS.fetch(request);
       }
-      return sheetsResponse(request, env);
+
+      const headers = new Headers(response.headers);
+      headers.set("x-regional-network-worker", "handled");
+      const markedResponse = new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+      console.log(JSON.stringify({
+        event: "request_complete",
+        path: url.pathname,
+        status: markedResponse.status,
+        durationMs: Date.now() - startedAt,
+        timestamp: new Date().toISOString(),
+      }));
+      return markedResponse;
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "worker_request_failed",
+        path: url.pathname,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedAt,
+        timestamp: new Date().toISOString(),
+      }));
+      return Response.json(
+        { error: "The dashboard service encountered an internal error." },
+        {
+          status: 500,
+          headers: {
+            "cache-control": "no-store",
+            "x-regional-network-worker": "handled",
+          },
+        },
+      );
     }
-    return env.ASSETS.fetch(request);
   },
 };
