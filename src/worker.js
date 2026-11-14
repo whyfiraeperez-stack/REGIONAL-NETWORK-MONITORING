@@ -8,6 +8,28 @@ const b64url = (bytes) =>
 
 const enc = (value) => b64url(new TextEncoder().encode(value));
 
+async function fetchWithRetry(url, options = {}, attempts = 3) {
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      if (![429, 500, 502, 503, 504].includes(response.status) || attempt === attempts - 1) {
+        return response;
+      }
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 5000)
+        : 300 * (2 ** attempt);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 300 * (2 ** attempt)));
+    }
+  }
+  throw lastError || new Error("Google request failed after retries.");
+}
+
 function pemBytes(pem) {
   const body = pem
     .replace(/-----BEGIN PRIVATE KEY-----/g, "")
@@ -41,7 +63,7 @@ async function googleAccessToken(env) {
     new TextEncoder().encode(unsigned),
   );
   const assertion = unsigned + "." + b64url(signature);
-  const response = await fetch("https://oauth2.googleapis.com/token", {
+  const response = await fetchWithRetry("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -89,7 +111,7 @@ async function sheetsResponse(request, env) {
       "https://sheets.googleapis.com/v4/spreadsheets/" +
       env.GOOGLE_SPREADSHEET_ID +
       "?fields=sheets.properties.title";
-    const metadataResponse = await fetch(metadataUrl, {
+    const metadataResponse = await fetchWithRetry(metadataUrl, {
       headers: { authorization: "Bearer " + accessToken },
     });
     const metadata = await metadataResponse.json();
@@ -115,7 +137,7 @@ async function sheetsResponse(request, env) {
         env.GOOGLE_SPREADSHEET_ID +
         "/values/" + encodeURIComponent(range) +
         "?valueRenderOption=FORMATTED_VALUE";
-      const response = await fetch(endpoint, {
+      const response = await fetchWithRetry(endpoint, {
         headers: { authorization: "Bearer " + accessToken },
       });
       const body = await response.json();
