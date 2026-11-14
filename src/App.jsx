@@ -8,6 +8,51 @@ const completeStatus = (s) => /complete|restored|closed|resolved/i.test(String(s
 const ageing = (start, end) => { const a = new Date(start); const b = end ? new Date(end) : new Date(); if (!start || isNaN(a.getTime()) || isNaN(b.getTime())) return "—"; const m = Math.max(0, Math.floor((b-a)/60000)); const d=Math.floor(m/1440), h=Math.floor((m%1440)/60), mm=m%60; return (d ? d+"d " : "")+h+"h "+mm+"m"; };
 const sheetRows = (s) => s?.rows || [];
 const sheetHeaders = (s) => s?.headers || [];
+const regionalOverviewCounts = (sheet) => {
+ const counts = { BB: null, OLT: null, LCP: null, NAP: null };
+ const grid = Array.isArray(sheet?.raw) ? sheet.raw : [];
+ if (!grid.length) return counts;
+ const metrics = [
+  ["BB", /\\bBB\\s*DOWN\\b|\\bBACKBONE\\s*DOWN\\b/i],
+  ["OLT", /\\bOLT\\s*DOWN\\b/i],
+  ["LCP", /\\bLCP\\s*DOWN\\b/i],
+  ["NAP", /\\bNAP\\s*DOWN\\b/i],
+ ];
+ const clean = (v) => String(v ?? "").trim();
+ const number = (v) => {
+  const s = clean(v).replace(/,/g, "");
+  if (!s || !/^\\d+(?:\\.\\d+)?$/.test(s)) return null;
+  return Number(s);
+ };
+ let start = grid.findIndex(row => row.some(cell => /REGIONAL\\s+OUTAGE\\s+OVERVIEW/i.test(clean(cell))));
+ if (start < 0) start = 0;
+ const end = Math.min(grid.length, start + (start === 0 ? grid.length : 25));
+ for (let i = start; i < end; i++) {
+  const row = grid[i] || [];
+  for (const [key, pattern] of metrics) {
+   const at = row.findIndex(cell => pattern.test(clean(cell)));
+   if (at < 0) continue;
+   let value = null;
+   // Layout A: metric label and its count are in the same row.
+   for (let j = at + 1; j < row.length; j++) {
+    value = number(row[j]);
+    if (value !== null) break;
+   }
+   // Layout B: metric label is a column heading; read the first following data row.
+   if (value === null) {
+    for (let k = i + 1; k < Math.min(end, i + 4); k++) {
+     value = number((grid[k] || [])[at]);
+     if (value !== null) break;
+    }
+   }
+   if (value !== null) counts[key] = value;
+  }
+  // Stop at the next visibly separate section heading after the overview.
+  if (i > start && row.filter(cell => clean(cell)).length === 1 &&
+      /^(?!REGIONAL\\s+OUTAGE\\s+OVERVIEW)[A-Z][A-Z0-9 &/-]{4,}$/.test(clean(row.find(cell => clean(cell))))) break;
+ }
+ return counts;
+};
 function Table({ rows = [], headers = [], limit = 250 }) {
  const safeRows = Array.isArray(rows) ? rows : [];
  const safeHeaders = Array.isArray(headers) ? headers : [];
@@ -27,7 +72,18 @@ export default function App() {
  const db=sheetRows(data.DATABASE), gnoc=sheetRows(data.GNOC), adv=sheetRows(data["OUTAGE ADVISORY"]), daily=sheetRows(data["DAILY REPORT"]);
  const tickets=useMemo(()=>db.map((r,i)=>{const statusText=val(r,["STATUS"]);const down=val(r,["DOWNTIME","DOWN TIME","START DATE"]);const restored=val(r,["DATE RESTORED","DATE RESTORE","RESTORED DATE","UPTIME"]);return {...r,__ticket:val(r,["TICKET","TICKET ID","INTERNAL ID"])||("ROW-"+(i+1)),__status:runningStatus(statusText)?"RUNNING":completeStatus(statusText)?"COMPLETED":statusText.toUpperCase(),__type:val(r,["TYPE","OUTAGE TYPE","TYPE/PROVINCE","IMPACT"]).toUpperCase(),__ageing:ageing(down,restored)};}),[db]);
  const running=tickets.filter(r=>r.__status==="RUNNING"), completed=tickets.filter(r=>r.__status==="COMPLETED");
- const kpis=useMemo(()=>{const c={BB:0,OLT:0,LCP:0,NAP:0};const flat=daily.flatMap(r=>Object.entries(r).map(([k,v])=>[k,String(v??"")]));for(const [k,v] of flat){const label=k+" "+v;for(const key of Object.keys(c)){if(new RegExp(key+"\\s*DOWN","i").test(label)){const n=v.match(/\d+/);if(n)c[key]=Number(n[0]);}}}if(!flat.some(([k,v])=>/BB\s*DOWN|OLT\s*DOWN|LCP\s*DOWN|NAP\s*DOWN/i.test(k+" "+v))){for(const r of running){const s=(r.__type+" "+Object.values(r).join(" ")).toUpperCase();if(/BACKBONE|\bBB\b/.test(s))c.BB++;else if(/\bOLT\b/.test(s))c.OLT++;else if(/\bLCP\b/.test(s))c.LCP++;else if(/\bNAP\b/.test(s))c.NAP++;}}return c;},[daily,running]);
+ const kpis=useMemo(()=>{
+  const extracted=regionalOverviewCounts(data["DAILY REPORT"]);
+  const fallback={BB:0,OLT:0,LCP:0,NAP:0};
+  for(const r of running){
+   const s=(r.__type+" "+Object.values(r).join(" ")).toUpperCase();
+   if(/BACKBONE|\\bBB\\b/.test(s))fallback.BB++;
+   else if(/\\bOLT\\b/.test(s))fallback.OLT++;
+   else if(/\\bLCP\\b/.test(s))fallback.LCP++;
+   else if(/\\bNAP\\b/.test(s))fallback.NAP++;
+  }
+  return {BB:extracted.BB??fallback.BB,OLT:extracted.OLT??fallback.OLT,LCP:extracted.LCP??fallback.LCP,NAP:extracted.NAP??fallback.NAP};
+ },[data,running]);
  const filtered=tickets.filter(r=>{if(statusFilter!=="ALL"&&r.__status!==statusFilter)return false;if(typeFilter!=="ALL"&&!r.__type.includes(typeFilter))return false;return !query||Object.values(r).join(" ").toLowerCase().includes(query.toLowerCase());});
  const phTime=clock.toLocaleString("en-PH",{timeZone:"Asia/Manila",dateStyle:"medium",timeStyle:"medium"});
  const report=tickets.map(r=>({...r,"Ticket Ageing":r.__ageing}));
