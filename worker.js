@@ -86,6 +86,31 @@ async function googleAccessToken(env) {
   return cachedGoogleToken;
 }
 
+function parseDashboardColumns(valueRanges) {
+  const ticketValues = valueRanges[0]?.values || [];
+  const statusValues = valueRanges[1]?.values || [];
+  const typeValues = valueRanges[2]?.values || [];
+  const rowCount = Math.max(ticketValues.length, statusValues.length, typeValues.length);
+  const rows = [];
+  const counts = { BB: 0, OLT: 0, LCP: 0, NAP: 0 };
+  for (let i = 1; i < rowCount; i++) {
+    const status = String(statusValues[i]?.[0] ?? "").trim().toUpperCase();
+    if (status !== "RUNNING") continue;
+    const type = String(typeValues[i]?.[0] ?? "").trim();
+    const normalizedType = type.toUpperCase();
+    if (/BACKBONE|\bBB\b/.test(normalizedType)) counts.BB++;
+    else if (/\bOLT\b/.test(normalizedType)) counts.OLT++;
+    else if (/\bLCP\b/.test(normalizedType)) counts.LCP++;
+    else if (/\bNAP\b/.test(normalizedType)) counts.NAP++;
+    rows.push({
+      "TICKET NUMBER": String(ticketValues[i]?.[0] ?? "").trim(),
+      STATUS: status,
+      "TYPE/PROVINCE": type,
+    });
+  }
+  return { headers: ["TICKET NUMBER", "STATUS", "TYPE/PROVINCE"], rows, counts };
+}
+
 function parseSheet(values) {
   const headers = (values[0] || []).map((value, index) =>
     String(value || "Column " + (index + 1)).trim()
@@ -102,8 +127,13 @@ function parseSheet(values) {
 }
 
 async function loadSheetsFromGoogle(request, env) {
-  const requested = new URL(request.url).searchParams.get("tab");
+  const params = new URL(request.url).searchParams;
+  const requested = params.get("tab");
+  const view = params.get("view");
   const canonicalRequested = requested === "GNOC UPDATE" ? "GNOC" : requested;
+  if (view && !(view === "dashboard" && canonicalRequested === "DATABASE")) {
+    return Response.json({ error: "Unsupported spreadsheet view." }, { status: 400 });
+  }
   if (requested && !ALLOWED.includes(canonicalRequested)) {
     return Response.json({ error: "Unknown spreadsheet tab." }, { status: 400 });
   }
@@ -147,12 +177,22 @@ async function loadSheetsFromGoogle(request, env) {
       if (!actualName) {
         throw new Error("Missing spreadsheet tab: " + candidates.join(" or "));
       }
-      const range = "'" + actualName.replace(/'/g, "''") + "'!A:ZZ";
-      const endpoint =
-        "https://sheets.googleapis.com/v4/spreadsheets/" +
-        env.GOOGLE_SPREADSHEET_ID +
-        "/values/" + encodeURIComponent(range) +
-        "?valueRenderOption=FORMATTED_VALUE";
+      let endpoint;
+      if (view === "dashboard") {
+        const escapedName = actualName.replace(/'/g, "''");
+        const params = new URLSearchParams();
+        for (const column of ["A:A", "B:B", "H:H"]) {
+          params.append("ranges", "'" + escapedName + "'!" + column);
+        }
+        params.set("valueRenderOption", "FORMATTED_VALUE");
+        endpoint = "https://sheets.googleapis.com/v4/spreadsheets/" +
+          env.GOOGLE_SPREADSHEET_ID + "/values:batchGet?" + params.toString();
+      } else {
+        const range = "'" + actualName.replace(/'/g, "''") + "'!A:ZZ";
+        endpoint = "https://sheets.googleapis.com/v4/spreadsheets/" +
+          env.GOOGLE_SPREADSHEET_ID + "/values/" + encodeURIComponent(range) +
+          "?valueRenderOption=FORMATTED_VALUE";
+      }
       const response = await fetchWithRetry(endpoint, {
         headers: { authorization: "Bearer " + accessToken },
       });
@@ -160,7 +200,13 @@ async function loadSheetsFromGoogle(request, env) {
       if (!response.ok) {
         throw new Error(actualName + ": " + (body.error?.message || "Google Sheets API error"));
       }
-      pairs.push([name, parseSheet(body.values || [])]);
+      if (view === "dashboard") {
+        const summary = parseDashboardColumns(body.valueRanges || []);
+        pairs.push([name, { headers: summary.headers, rows: summary.rows }]);
+        pairs.push(["dashboardCounts", summary.counts]);
+      } else {
+        pairs.push([name, parseSheet(body.values || [])]);
+      }
     }
     return Response.json(
       { syncedAt: new Date().toISOString(), sheets: Object.fromEntries(pairs) },

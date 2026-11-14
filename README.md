@@ -26,7 +26,7 @@ Create a JSON key in Google Cloud Console > IAM & Admin > Service Accounts > bic
 
 The frontend calls same-origin `/api/sheets`. Google credentials are only read by the server Worker, never returned to the browser. The API only permits the four allow-listed tabs and uses the read-only Sheets OAuth scope. This release is read-only; write-back is not enabled.
 
-Dashboard polling interval: 30 seconds. It displays the last successful synchronization time and retains previously loaded data after a subsequent request fails.
+Dashboard auto-polling interval: 60 seconds. Dashboard sync reads only DATABASE columns A (ticket number), B (status), and H (type/province), and returns only RUNNING records plus counts. The full DATABASE tab is fetched when the DATABASE or GENERATE REPORT view is opened, with no recurring full-database polling. OUTAGE ADVISORY and GNOC tabs are fetched when their respective views are opened, with no recurring polling. The frontend retains previously loaded data after a subsequent request fails.
 
 DAILY REPORT is treated as the KPI source when its values appear as recognizable label/value pairs. Confirm the actual sheet layout and adjust KPI mapping if necessary.
 
