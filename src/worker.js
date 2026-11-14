@@ -70,7 +70,9 @@ function parseSheet(values) {
 
 async function sheetsResponse(request, env) {
   const requested = new URL(request.url).searchParams.get("tab");
-  if (requested && !ALLOWED.includes(requested)) {
+  const canonicalRequested = requested === "GNOC UPDATE" ? "GNOC" : requested;
+  const allowed = ["DATABASE", "DAILY REPORT", "OUTAGE ADVISORY", "GNOC"];
+  if (requested && !allowed.includes(canonicalRequested)) {
     return Response.json({ error: "Unknown spreadsheet tab." }, { status: 400 });
   }
   if (!env.GOOGLE_SERVICE_ACCOUNT_JSON || !env.GOOGLE_SPREADSHEET_ID) {
@@ -82,9 +84,29 @@ async function sheetsResponse(request, env) {
 
   try {
     const accessToken = await googleAccessToken(env);
-    const names = requested ? [requested] : ALLOWED;
+    const metadataUrl =
+      "https://sheets.googleapis.com/v4/spreadsheets/" +
+      env.GOOGLE_SPREADSHEET_ID +
+      "?fields=sheets.properties.title";
+    const metadataResponse = await fetch(metadataUrl, {
+      headers: { authorization: "Bearer " + accessToken },
+    });
+    const metadata = await metadataResponse.json();
+    if (!metadataResponse.ok) {
+      throw new Error(metadata.error?.message || "Unable to read spreadsheet tabs");
+    }
+
+    const availableTabs = (metadata.sheets || [])
+      .map((sheet) => sheet.properties?.title)
+      .filter(Boolean);
+    const names = requested ? [canonicalRequested] : allowed;
     const pairs = await Promise.all(names.map(async (name) => {
-      const range = "'" + name.replace(/'/g, "''") + "'!A:ZZ";
+      const candidates = name === "GNOC" ? ["GNOC", "GNOC UPDATE"] : [name];
+      const actualName = candidates.find((candidate) => availableTabs.includes(candidate));
+      if (!actualName) {
+        throw new Error("Missing spreadsheet tab: " + candidates.join(" or "));
+      }
+      const range = "'" + actualName.replace(/'/g, "''") + "'!A:ZZ";
       const endpoint =
         "https://sheets.googleapis.com/v4/spreadsheets/" +
         env.GOOGLE_SPREADSHEET_ID +
@@ -95,7 +117,7 @@ async function sheetsResponse(request, env) {
       });
       const body = await response.json();
       if (!response.ok) {
-        throw new Error(name + ": " + (body.error?.message || "Google Sheets API error"));
+        throw new Error(actualName + ": " + (body.error?.message || "Google Sheets API error"));
       }
       return [name, parseSheet(body.values || [])];
     }));
