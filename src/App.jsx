@@ -78,7 +78,7 @@ async function fetchSheetTab(tab) {
  const contentType=response.headers.get("content-type")||"";
  const body=await response.text();
  if(!contentType.toLowerCase().includes("application/json")){
-  throw new Error("The "+tab+" API returned "+(contentType||"an unknown content type")+" (HTTP "+response.status+") instead of JSON: "+body.slice(0,180).replace(/\\s+/g," ").trim());
+  throw new Error("The "+tab+" API returned "+(contentType||"an unknown content type")+" (HTTP "+response.status+") instead of JSON: "+body.slice(0,180).replace(/\s+/g," ").trim());
  }
  let payload;
  try{payload=JSON.parse(body);}catch{throw new Error("The "+tab+" API returned invalid JSON (HTTP "+response.status+").");}
