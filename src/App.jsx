@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 const TABS = ["DASHBOARD", "OUTAGE ADVISORY", "DATABASE", "GNOC UPDATE", "GENERATE REPORT"];
 const LOGO = "https://content.convergeict.com/assets/25c65629-d1ee-43a3-82bd-5bed31ecbf06.svg";
 const norm = (s) => String(s ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 const val = (row, names) => { for (const n of names) { const k = Object.keys(row || {}).find((x) => norm(x) === norm(n)); if (k && row[k] !== "" && row[k] != null) return String(row[k]).trim(); } return ""; };
-const runningStatus = (s) => /running|open|pending|ongoing/i.test(String(s || ""));
-const completeStatus = (s) => /complete|restored|closed|resolved/i.test(String(s || ""));
+const runningStatus = (s) => /\b(running|open|pending|ongoing|in progress|active)\b/i.test(String(s || ""));
+const completeStatus = (s) => /\b(completed|restored|closed|resolved)\b/i.test(String(s || ""));
 const ageing = (start, end) => { const a = new Date(start); const b = end ? new Date(end) : new Date(); if (!start || isNaN(a.getTime()) || isNaN(b.getTime())) return "—"; const m = Math.max(0, Math.floor((b-a)/60000)); const d=Math.floor(m/1440), h=Math.floor((m%1440)/60), mm=m%60; return (d ? d+"d " : "")+h+"h "+mm+"m"; };
 const sheetRows = (s) => s?.rows || [];
 const sheetHeaders = (s) => s?.headers || [];
@@ -12,44 +12,52 @@ const regionalOverviewCounts = (sheet) => {
  const counts = { BB: null, OLT: null, LCP: null, NAP: null };
  const grid = Array.isArray(sheet?.raw) ? sheet.raw : [];
  if (!grid.length) return counts;
- const metrics = [
-  ["BB", /\\bBB\\s*DOWN\\b|\\bBACKBONE\\s*DOWN\\b/i],
-  ["OLT", /\\bOLT\\s*DOWN\\b/i],
-  ["LCP", /\\bLCP\\s*DOWN\\b/i],
-  ["NAP", /\\bNAP\\s*DOWN\\b/i],
- ];
- const clean = (v) => String(v ?? "").trim();
- const number = (v) => {
-  const s = clean(v).replace(/,/g, "");
-  if (!s || !/^\\d+(?:\\.\\d+)?$/.test(s)) return null;
-  return Number(s);
+ const clean = (value) => String(value ?? "").trim();
+ const number = (value) => {
+  const text = clean(value).replace(/,/g, "");
+  return text && /^\d+(?:\.\d+)?$/.test(text) ? Number(text) : null;
  };
- let start = grid.findIndex(row => row.some(cell => /REGIONAL\\s+OUTAGE\\s+OVERVIEW/i.test(clean(cell))));
- if (start < 0) start = 0;
- const end = Math.min(grid.length, start + (start === 0 ? grid.length : 25));
- for (let i = start; i < end; i++) {
-  const row = grid[i] || [];
-  for (const [key, pattern] of metrics) {
-   const at = row.findIndex(cell => pattern.test(clean(cell)));
-   if (at < 0) continue;
-   let value = null;
-   // Layout A: metric label and its count are in the same row.
-   for (let j = at + 1; j < row.length; j++) {
-    value = number(row[j]);
-    if (value !== null) break;
+
+ // The DAILY REPORT uses four side-by-side sections. Each section has a
+ // province/type column, then UP, DOWN, TOTAL and a percentage column.
+ // Read the DOWN value from that section's TOTAL row rather than looking
+ // for a literal "BB DOWN" cell (the sheet does not contain such a label).
+ const sectionRowIndex = grid.findIndex((row) => {
+  const labels = (row || []).map((cell) => clean(cell).toUpperCase());
+  return ["BB", "OLT", "LCP", "NAP"].filter((name) => labels.includes(name)).length >= 2;
+ });
+ if (sectionRowIndex < 0) return counts;
+
+ const sectionRow = grid[sectionRowIndex] || [];
+ const headerRowIndex = grid.findIndex((row, index) =>
+  index > sectionRowIndex &&
+  (row || []).some((cell) => clean(cell).toUpperCase() === "DOWN")
+ );
+ if (headerRowIndex < 0) return counts;
+ const headerRow = grid[headerRowIndex] || [];
+ const sections = ["BB", "OLT", "LCP", "NAP"]
+  .map((name) => ({ name, start: sectionRow.findIndex((cell) => clean(cell).toUpperCase() === name) }))
+  .filter((section) => section.start >= 0)
+  .sort((a, b) => a.start - b.start);
+
+ for (let index = 0; index < sections.length; index++) {
+  const section = sections[index];
+  const nextStart = sections[index + 1]?.start ?? headerRow.length;
+  let downColumn = -1;
+  for (let column = section.start; column < nextStart; column++) {
+   if (clean(headerRow[column]).toUpperCase() === "DOWN") {
+    downColumn = column;
+    break;
    }
-   // Layout B: metric label is a column heading; read the first following data row.
-   if (value === null) {
-    for (let k = i + 1; k < Math.min(end, i + 4); k++) {
-     value = number((grid[k] || [])[at]);
-     if (value !== null) break;
-    }
-   }
-   if (value !== null) counts[key] = value;
   }
-  // Stop at the next visibly separate section heading after the overview.
-  if (i > start && row.filter(cell => clean(cell)).length === 1 &&
-      /^(?!REGIONAL\\s+OUTAGE\\s+OVERVIEW)[A-Z][A-Z0-9 &/-]{4,}$/.test(clean(row.find(cell => clean(cell))))) break;
+  if (downColumn < 0) continue;
+
+  const totalRow = grid.slice(headerRowIndex + 1).find((row) =>
+   clean((row || [])[section.start]).toUpperCase() === "TOTAL"
+  );
+  if (!totalRow) continue;
+  const value = number(totalRow[downColumn]);
+  if (value !== null) counts[section.name] = value;
  }
  return counts;
 };
@@ -62,12 +70,23 @@ function Table({ rows = [], headers = [], limit = 250 }) {
 }
 function csvDownload(rows, filename) {
  if (!rows.length) return;
- const cols=Object.keys(rows[0]); const csv=[cols,...rows.map(r=>cols.map(h=>r[h]??""))].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n");
- const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})); a.download=filename; a.click(); URL.revokeObjectURL(a.href);
+ const cols = Object.keys(rows[0]);
+ const csv = [cols, ...rows.map((row) => cols.map((header) => row[header] ?? ""))]
+  .map((row) => row.map((value) => '"' + String(value).replace(/"/g, '""') + '"').join(","))
+  .join("\r\n");
+ const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+ const anchor = document.createElement("a");
+ anchor.href = url;
+ anchor.download = filename;
+ document.body.appendChild(anchor);
+ anchor.click();
+ anchor.remove();
+ window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export default function App() {
  const [tab,setTab]=useState("DASHBOARD"), [data,setData]=useState({}), [status,setStatus]=useState("connecting"), [lastSync,setLastSync]=useState(null), [error,setError]=useState(""), [auto,setAuto]=useState(true), [query,setQuery]=useState(""), [statusFilter,setStatusFilter]=useState("ALL"), [typeFilter,setTypeFilter]=useState("ALL"), [clock,setClock]=useState(new Date());
- const sync=useCallback(async()=>{setStatus("syncing");try{const r=await fetch("/api/sheets",{method:"GET",cache:"no-store",headers:{accept:"application/json"}});const contentType=r.headers.get("content-type")||"";const body=await r.text();if(!contentType.toLowerCase().includes("application/json")){const preview=body.slice(0,140).replace(/\\s+/g," ").trim();throw new Error("The /api/sheets endpoint returned "+(contentType||"an unknown content type")+" (HTTP "+r.status+") instead of JSON. Cloudflare may be serving the dashboard HTML instead of the Worker API. Response: "+preview);}let p;try{p=JSON.parse(body);}catch{throw new Error("The spreadsheet API returned invalid JSON (HTTP "+r.status+").");}if(!r.ok)throw new Error(p.error||"Google Sheets request failed (HTTP "+r.status+").");if(!p.sheets||typeof p.sheets!=="object")throw new Error("The spreadsheet API response is missing its sheets data.");setData(p.sheets);setLastSync(new Date(p.syncedAt||Date.now()));setStatus("online");setError("");}catch(e){setStatus("error");setError(e.message||"Unable to synchronize.");}},[]);
+ const syncInFlight = useRef(false);
+ const sync=useCallback(async()=>{if(syncInFlight.current)return;syncInFlight.current=true;setStatus("syncing");try{const r=await fetch("/api/sheets",{method:"GET",cache:"no-store",headers:{accept:"application/json"}});const contentType=r.headers.get("content-type")||"";const body=await r.text();if(!contentType.toLowerCase().includes("application/json")){const preview=body.slice(0,140).replace(/\\s+/g," ").trim();throw new Error("The /api/sheets endpoint returned "+(contentType||"an unknown content type")+" (HTTP "+r.status+") instead of JSON. Cloudflare may be serving the dashboard HTML instead of the Worker API. Response: "+preview);}let p;try{p=JSON.parse(body);}catch{throw new Error("The spreadsheet API returned invalid JSON (HTTP "+r.status+").");}if(!r.ok)throw new Error(p.error||"Google Sheets request failed (HTTP "+r.status+").");if(!p.sheets||typeof p.sheets!=="object")throw new Error("The spreadsheet API response is missing its sheets data.");setData(p.sheets);setLastSync(new Date(p.syncedAt||Date.now()));setStatus("online");setError("");}catch(e){setStatus("error");setError(e.message||"Unable to synchronize.");}finally{syncInFlight.current=false;}},[]);
  useEffect(()=>{sync();},[sync]); useEffect(()=>{if(!auto)return;const id=setInterval(sync,30000);return()=>clearInterval(id);},[auto,sync]); useEffect(()=>{const id=setInterval(()=>setClock(new Date()),30000);return()=>clearInterval(id);},[]);
  const db=sheetRows(data.DATABASE), gnoc=sheetRows(data.GNOC), adv=sheetRows(data["OUTAGE ADVISORY"]), daily=sheetRows(data["DAILY REPORT"]);
  const tickets=useMemo(()=>db.map((r,i)=>{const statusText=val(r,["STATUS"]);const down=val(r,["DOWNTIME","DOWN TIME","START DATE"]);const restored=val(r,["DATE RESTORED","DATE RESTORE","RESTORED DATE","UPTIME"]);return {...r,__ticket:val(r,["TICKET","TICKET ID","INTERNAL ID"])||("ROW-"+(i+1)),__status:runningStatus(statusText)?"RUNNING":completeStatus(statusText)?"COMPLETED":statusText.toUpperCase(),__type:val(r,["TYPE","OUTAGE TYPE","TYPE/PROVINCE","IMPACT"]).toUpperCase(),__ageing:ageing(down,restored)};}),[db]);
