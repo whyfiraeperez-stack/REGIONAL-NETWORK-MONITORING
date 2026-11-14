@@ -56,7 +56,7 @@ async function googleAccessToken(env) {
   return payload.access_token;
 }
 
-function parseSheet(values) {
+function parseSheet(values, includeRaw = false) {
   const headers = (values[0] || []).map((value, index) =>
     String(value || "Column " + (index + 1)).trim()
   );
@@ -65,7 +65,9 @@ function parseSheet(values) {
     .map((row) => Object.fromEntries(
       headers.map((header, index) => [header, row[index] ?? ""])
     ));
-  return { headers, rows, raw: values };
+  // Only DAILY REPORT needs its original grid for the regional KPI extractor.
+  // Avoid returning a second copy of the much larger DATABASE and GNOC tabs.
+  return includeRaw ? { headers, rows, raw: values } : { headers, rows };
 }
 
 async function sheetsResponse(request, env) {
@@ -100,7 +102,9 @@ async function sheetsResponse(request, env) {
       .map((sheet) => sheet.properties?.title)
       .filter(Boolean);
     const names = requested ? [canonicalRequested] : allowed;
-    const pairs = await Promise.all(names.map(async (name) => {
+    // Read tabs one at a time to keep peak memory usage within Worker limits.
+    const pairs = [];
+    for (const name of names) {
       const candidates = name === "GNOC" ? ["GNOC", "GNOC UPDATE"] : [name];
       const actualName = candidates.find((candidate) => availableTabs.includes(candidate));
       if (!actualName) {
@@ -119,8 +123,8 @@ async function sheetsResponse(request, env) {
       if (!response.ok) {
         throw new Error(actualName + ": " + (body.error?.message || "Google Sheets API error"));
       }
-      return [name, parseSheet(body.values || [])];
-    }));
+      pairs.push([name, parseSheet(body.values || [], name === "DAILY REPORT")]);
+    }
     return Response.json(
       { syncedAt: new Date().toISOString(), sheets: Object.fromEntries(pairs) },
       { headers: { "cache-control": "no-store" } },
