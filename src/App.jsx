@@ -95,13 +95,17 @@ export default function App() {
   const extracted=regionalOverviewCounts(data["DAILY REPORT"]);
   const fallback={BB:0,OLT:0,LCP:0,NAP:0};
   for(const r of running){
-   const s=(r.__type+" "+Object.values(r).join(" ")).toUpperCase();
+   // Classify from the ticket's outage-type field only. Searching every cell
+   // can misclassify tickets when notes or locations happen to contain "BB".
+   const s=String(r.__type||"").toUpperCase();
    if(/BACKBONE|\bBB\b/.test(s))fallback.BB++;
    else if(/\bOLT\b/.test(s))fallback.OLT++;
    else if(/\bLCP\b/.test(s))fallback.LCP++;
    else if(/\bNAP\b/.test(s))fallback.NAP++;
   }
-  return {BB:extracted.BB??fallback.BB,OLT:extracted.OLT??fallback.OLT,LCP:extracted.LCP??fallback.LCP,NAP:extracted.NAP??fallback.NAP};
+  // DATABASE is the ticket-level source of truth for BB outages. The
+  // DAILY REPORT summary can lag or have a manually maintained total.
+  return {BB:fallback.BB,OLT:extracted.OLT??fallback.OLT,LCP:extracted.LCP??fallback.LCP,NAP:extracted.NAP??fallback.NAP};
  },[data,running]);
  const filtered=tickets.filter(r=>{if(statusFilter!=="ALL"&&r.__status!==statusFilter)return false;if(typeFilter!=="ALL"&&!r.__type.includes(typeFilter))return false;return !query||Object.values(r).join(" ").toLowerCase().includes(query.toLowerCase());});
  const phTime=clock.toLocaleString("en-PH",{timeZone:"Asia/Manila",dateStyle:"medium",timeStyle:"medium"});
