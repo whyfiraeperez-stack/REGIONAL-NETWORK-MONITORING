@@ -1,4 +1,4 @@
-const ALLOWED = ["DATABASE", "DAILY REPORT", "OUTAGE ADVISORY", "GNOC"];
+const ALLOWED = ["DATABASE", "DAILY REPORT", "OUTAGE ADVISORY"];
 let cachedGoogleToken = null;
 let googleTokenExpiresAt = 0;
 let cachedSpreadsheetId = null;
@@ -134,7 +134,7 @@ async function loadSheetsFromGoogle(request, env) {
   const params = new URL(request.url).searchParams;
   const requested = params.get("tab");
   const view = params.get("view");
-  const canonicalRequested = requested === "GNOC UPDATE" ? "GNOC" : requested;
+  const canonicalRequested = requested;
   if (view && !(view === "dashboard" && canonicalRequested === "DATABASE")) {
     return Response.json({ error: "Unsupported spreadsheet view." }, { status: 400 });
   }
@@ -176,10 +176,9 @@ async function loadSheetsFromGoogle(request, env) {
     // Read tabs one at a time to keep peak memory usage within Worker limits.
     const pairs = [];
     for (const name of names) {
-      const candidates = name === "GNOC" ? ["GNOC", "GNOC UPDATE"] : [name];
-      const actualName = candidates.find((candidate) => availableTabs.includes(candidate));
-      if (!actualName) {
-        throw new Error("Missing spreadsheet tab: " + candidates.join(" or "));
+      const actualName = name;
+      if (!availableTabs.includes(actualName)) {
+        throw new Error("Missing spreadsheet tab: " + actualName);
       }
       let endpoint;
       if (view === "dashboard") {
