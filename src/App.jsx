@@ -96,10 +96,10 @@ export default function App() {
   const fallback={BB:0,OLT:0,LCP:0,NAP:0};
   for(const r of running){
    const s=(r.__type+" "+Object.values(r).join(" ")).toUpperCase();
-   if(/BACKBONE|\\bBB\\b/.test(s))fallback.BB++;
-   else if(/\\bOLT\\b/.test(s))fallback.OLT++;
-   else if(/\\bLCP\\b/.test(s))fallback.LCP++;
-   else if(/\\bNAP\\b/.test(s))fallback.NAP++;
+   if(/BACKBONE|\bBB\b/.test(s))fallback.BB++;
+   else if(/\bOLT\b/.test(s))fallback.OLT++;
+   else if(/\bLCP\b/.test(s))fallback.LCP++;
+   else if(/\bNAP\b/.test(s))fallback.NAP++;
   }
   return {BB:extracted.BB??fallback.BB,OLT:extracted.OLT??fallback.OLT,LCP:extracted.LCP??fallback.LCP,NAP:extracted.NAP??fallback.NAP};
  },[data,running]);
