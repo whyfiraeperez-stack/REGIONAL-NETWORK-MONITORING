@@ -115,21 +115,21 @@ export default function App() {
  const tickets=useMemo(()=>db.map((r,i)=>{const statusText=val(r,["STATUS"]);const down=val(r,["DOWNTIME","DOWN TIME","START DATE"]);const restored=val(r,["DATE RESTORED","DATE RESTORE","RESTORED DATE","UPTIME"]);return {...r,__ticket:val(r,["TICKET","TICKET ID","INTERNAL ID"])||("ROW-"+(i+1)),__status:runningStatus(statusText)?"RUNNING":completeStatus(statusText)?"COMPLETED":statusText.toUpperCase(),__type:["TYPE","OUTAGE TYPE","TYPE/PROVINCE","IMPACT"].map(name=>val(r,[name])).filter(Boolean).join(" ").toUpperCase(),__ageing:ageing(down,restored)};}),[db]);
  const running=tickets.filter(r=>r.__status==="RUNNING"), completed=tickets.filter(r=>r.__status==="COMPLETED");
  const kpis=useMemo(()=>{
-  const extracted=regionalOverviewCounts(data["DAILY REPORT"]);
-  const fallback={BB:0,OLT:0,LCP:0,NAP:0};
-  for(const r of running){
-   // Classify from the ticket's outage-type field only. Searching every cell
-   // can misclassify tickets when notes or locations happen to contain "BB".
-   const s=String(r.__type||"").toUpperCase();
-   if(/BACKBONE|\bBB\b/.test(s))fallback.BB++;
-   else if(/\bOLT\b/.test(s))fallback.OLT++;
-   else if(/\bLCP\b/.test(s))fallback.LCP++;
-   else if(/\bNAP\b/.test(s))fallback.NAP++;
+  const counts={BB:0,OLT:0,LCP:0,NAP:0};
+  for(const row of db){
+   // Use the actual DATABASE columns: B = STATUS and H = TYPE.
+   // Only records whose status is exactly RUNNING are included.
+   const values=Object.values(row||{});
+   const statusText=val(row,["STATUS"])||String(values[1]??"").trim();
+   if(statusText.trim().toUpperCase()!=="RUNNING")continue;
+   const typeText=(val(row,["TYPE"])||String(values[7]??"")).trim().toUpperCase();
+   if(/BACKBONE|\bBB\b/.test(typeText))counts.BB++;
+   else if(/\bOLT\b/.test(typeText))counts.OLT++;
+   else if(/\bLCP\b/.test(typeText))counts.LCP++;
+   else if(/\bNAP\b/.test(typeText))counts.NAP++;
   }
-  // DATABASE is the ticket-level source of truth for BB outages. The
-  // DAILY REPORT summary can lag or have a manually maintained total.
-  return {BB:fallback.BB,OLT:extracted.OLT??fallback.OLT,LCP:extracted.LCP??fallback.LCP,NAP:extracted.NAP??fallback.NAP};
- },[data,running]);
+  return counts;
+ },[db]);
  const filtered=tickets.filter(r=>{if(statusFilter!=="ALL"&&r.__status!==statusFilter)return false;if(typeFilter!=="ALL"&&!r.__type.includes(typeFilter))return false;return !query||Object.values(r).join(" ").toLowerCase().includes(query.toLowerCase());});
  const phTime=clock.toLocaleString("en-PH",{timeZone:"Asia/Manila",dateStyle:"medium",timeStyle:"medium"});
  const report=tickets.map(r=>({...r,"Ticket Ageing":r.__ageing}));
@@ -138,7 +138,7 @@ export default function App() {
  <nav className="nav">{TABS.map(t=><button key={t} className={tab===t?"active":""} onClick={()=>setTab(t)}>{t}</button>)}</nav><main>
  {error&&<div className="alert"><strong>Spreadsheet sync unavailable.</strong> {error}<span>Last successful sync: {lastSync?lastSync.toLocaleString():"None"}</span></div>}
  {tab==="DASHBOARD"&&<><div className="section-heading"><div><p className="eyebrow">LIVE NETWORK OPERATIONS</p><h2>Regional outage overview</h2></div><div className="sync-label">Last successful sync: {lastSync?lastSync.toLocaleTimeString():"Waiting for data"}</div></div>
- <div className="kpis"><article className="kpi running"><span>RUNNING TICKETS</span><strong>{running.length}</strong><small>DATABASE · ACTIVE RECORDS</small></article><article className="kpi red"><span>BB DOWN</span><strong>{kpis.BB}</strong><small>DAILY REPORT</small></article><article className="kpi amber"><span>OLT DOWN</span><strong>{kpis.OLT}</strong><small>DAILY REPORT</small></article><article className="kpi blue"><span>LCP DOWN</span><strong>{kpis.LCP}</strong><small>DAILY REPORT</small></article><article className="kpi green"><span>NAP DOWN</span><strong>{kpis.NAP}</strong><small>DAILY REPORT</small></article></div>
+ <div className="kpis"><article className="kpi running"><span>RUNNING TICKETS</span><strong>{running.length}</strong><small>DATABASE · ACTIVE RECORDS</small></article><article className="kpi red"><span>BB DOWN</span><strong>{kpis.BB}</strong><small>DATABASE · RUNNING · TYPE (H)</small></article><article className="kpi amber"><span>OLT DOWN</span><strong>{kpis.OLT}</strong><small>DATABASE · RUNNING · TYPE (H)</small></article><article className="kpi blue"><span>LCP DOWN</span><strong>{kpis.LCP}</strong><small>DATABASE · RUNNING · TYPE (H)</small></article><article className="kpi green"><span>NAP DOWN</span><strong>{kpis.NAP}</strong><small>DATABASE · RUNNING · TYPE (H)</small></article></div>
  <div className="grid-two"><section className="panel"><div className="panel-head"><h3>OUTAGE ADVISORY</h3><span>{adv.length} source rows</span></div><Table rows={adv} headers={sheetHeaders(data["OUTAGE ADVISORY"])} limit={8}/></section><section className="panel"><div className="panel-head"><h3>GNOC UPDATE</h3><span>{gnoc.length} source rows</span></div><Table rows={gnoc} headers={sheetHeaders(data.GNOC)} limit={8}/></section></div>
  <section className="panel"><div className="panel-head"><h3>RUNNING TICKETS</h3><button className="text-button" onClick={()=>setTab("DATABASE")}>VIEW DATABASE →</button></div><Table rows={running.map(r=>({"Ticket ID":r.__ticket,"Status":r.__status,"Type":r.__type,"Ageing":r.__ageing,...r}))} limit={12}/></section></>}
  {tab==="OUTAGE ADVISORY"&&<section className="panel"><div className="panel-head"><h2>OUTAGE ADVISORY</h2><span>Source: OUTAGE ADVISORY tab</span></div><Table rows={adv} headers={sheetHeaders(data["OUTAGE ADVISORY"])}/></section>}
