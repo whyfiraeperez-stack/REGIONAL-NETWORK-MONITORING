@@ -1,4 +1,9 @@
 const ALLOWED = ["DATABASE", "DAILY REPORT", "OUTAGE ADVISORY", "GNOC"];
+let cachedGoogleToken = null;
+let googleTokenExpiresAt = 0;
+let cachedSpreadsheetId = null;
+let cachedSheetTitles = null;
+let sheetTitlesExpiresAt = 0;
 
 const b64url = (bytes) =>
   btoa(String.fromCharCode(...new Uint8Array(bytes)))
@@ -39,6 +44,7 @@ function pemBytes(pem) {
 }
 
 async function googleAccessToken(env) {
+  if (cachedGoogleToken && Date.now() < googleTokenExpiresAt - 60000) return cachedGoogleToken;
   const service = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON);
   const now = Math.floor(Date.now() / 1000);
   const header = enc(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -75,7 +81,9 @@ async function googleAccessToken(env) {
   if (!response.ok) {
     throw new Error(payload.error_description || payload.error || "Google OAuth token request failed");
   }
-  return payload.access_token;
+  cachedGoogleToken = payload.access_token;
+  googleTokenExpiresAt = Date.now() + Math.max(60, Number(payload.expires_in) || 3600) * 1000;
+  return cachedGoogleToken;
 }
 
 function parseSheet(values, includeRaw = false) {
@@ -107,21 +115,28 @@ async function sheetsResponse(request, env) {
 
   try {
     const accessToken = await googleAccessToken(env);
-    const metadataUrl =
-      "https://sheets.googleapis.com/v4/spreadsheets/" +
-      env.GOOGLE_SPREADSHEET_ID +
-      "?fields=sheets.properties.title";
-    const metadataResponse = await fetchWithRetry(metadataUrl, {
-      headers: { authorization: "Bearer " + accessToken },
-    });
-    const metadata = await metadataResponse.json();
-    if (!metadataResponse.ok) {
-      throw new Error(metadata.error?.message || "Unable to read spreadsheet tabs");
+    let availableTabs;
+    if (cachedSpreadsheetId === env.GOOGLE_SPREADSHEET_ID && cachedSheetTitles && Date.now() < sheetTitlesExpiresAt) {
+      availableTabs = cachedSheetTitles;
+    } else {
+      const metadataUrl =
+        "https://sheets.googleapis.com/v4/spreadsheets/" +
+        env.GOOGLE_SPREADSHEET_ID +
+        "?fields=sheets.properties.title";
+      const metadataResponse = await fetchWithRetry(metadataUrl, {
+        headers: { authorization: "Bearer " + accessToken },
+      });
+      const metadata = await metadataResponse.json();
+      if (!metadataResponse.ok) {
+        throw new Error(metadata.error?.message || "Unable to read spreadsheet tabs");
+      }
+      availableTabs = (metadata.sheets || [])
+        .map((sheet) => sheet.properties?.title)
+        .filter(Boolean);
+      cachedSpreadsheetId = env.GOOGLE_SPREADSHEET_ID;
+      cachedSheetTitles = availableTabs;
+      sheetTitlesExpiresAt = Date.now() + 5 * 60 * 1000;
     }
-
-    const availableTabs = (metadata.sheets || [])
-      .map((sheet) => sheet.properties?.title)
-      .filter(Boolean);
     const names = requested ? [canonicalRequested] : ALLOWED;
     // Read tabs one at a time to keep peak memory usage within Worker limits.
     const pairs = [];
