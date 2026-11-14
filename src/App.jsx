@@ -68,6 +68,24 @@ function Table({ rows = [], headers = [], limit = 250 }) {
  const cols = safeHeaders.length ? safeHeaders : Object.keys(safeRows[0] || {});
  return <div className="table-wrap"><table><thead><tr>{cols.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{safeRows.slice(0,limit).map((r,i)=><tr key={i}>{cols.map((h)=><td key={h}>{String(r?.[h] ?? "—")}</td>)}</tr>)}</tbody></table>{safeRows.length>limit && <p className="muted small">Showing first {limit} of {safeRows.length} rows.</p>}</div>;
 }
+async function fetchSheetTab(tab) {
+ let response;
+ for(let attempt=0;attempt<3;attempt++){
+  response=await fetch("/api/sheets?tab="+encodeURIComponent(tab),{method:"GET",cache:"no-store",headers:{accept:"application/json"}});
+  if(![429,500,502,503,504].includes(response.status)||attempt===2)break;
+  await new Promise(resolve=>setTimeout(resolve,500*(2**attempt)));
+ }
+ const contentType=response.headers.get("content-type")||"";
+ const body=await response.text();
+ if(!contentType.toLowerCase().includes("application/json")){
+  throw new Error("The "+tab+" API returned "+(contentType||"an unknown content type")+" (HTTP "+response.status+") instead of JSON: "+body.slice(0,180).replace(/\\s+/g," ").trim());
+ }
+ let payload;
+ try{payload=JSON.parse(body);}catch{throw new Error("The "+tab+" API returned invalid JSON (HTTP "+response.status+").");}
+ if(!response.ok)throw new Error(payload.error||payload.message||payload.detail||("The "+tab+" request failed (HTTP "+response.status+"): "+JSON.stringify(payload).slice(0,250)));
+ if(!payload.sheets||!payload.sheets[tab])throw new Error("The API response is missing the "+tab+" tab.");
+ return {sheet:payload.sheets[tab],syncedAt:payload.syncedAt};
+}
 function csvDownload(rows, filename) {
  if (!rows.length) return;
  const cols = Object.keys(rows[0]);
@@ -86,7 +104,7 @@ function csvDownload(rows, filename) {
 export default function App() {
  const [tab,setTab]=useState("DASHBOARD"), [data,setData]=useState({}), [status,setStatus]=useState("connecting"), [lastSync,setLastSync]=useState(null), [error,setError]=useState(""), [auto,setAuto]=useState(true), [query,setQuery]=useState(""), [statusFilter,setStatusFilter]=useState("ALL"), [typeFilter,setTypeFilter]=useState("ALL"), [clock,setClock]=useState(new Date());
  const syncInFlight = useRef(false);
- const sync=useCallback(async()=>{if(syncInFlight.current)return;syncInFlight.current=true;setStatus("syncing");try{let r;for(let attempt=0;attempt<3;attempt++){r=await fetch("/api/sheets",{method:"GET",cache:"no-store",headers:{accept:"application/json"}});if(![429,500,502,503,504].includes(r.status)||attempt===2)break;await new Promise(resolve=>setTimeout(resolve,500*(2**attempt)));}const contentType=r.headers.get("content-type")||"";const body=await r.text();if(!contentType.toLowerCase().includes("application/json")){const preview=body.slice(0,140).replace(/\s+/g," ").trim();throw new Error("The /api/sheets endpoint returned "+(contentType||"an unknown content type")+" (HTTP "+r.status+") instead of JSON. Cloudflare may be serving the dashboard HTML instead of the Worker API. Response: "+preview);}let p;try{p=JSON.parse(body);}catch{throw new Error("The spreadsheet API returned invalid JSON (HTTP "+r.status+").");}if(!r.ok)throw new Error(p.error||p.message||p.detail||("Google Sheets request failed (HTTP "+r.status+"): "+JSON.stringify(p).slice(0,300)));if(!p.sheets||typeof p.sheets!=="object")throw new Error("The spreadsheet API response is missing its sheets data.");setData(p.sheets);setLastSync(new Date(p.syncedAt||Date.now()));setStatus("online");setError("");}catch(e){setStatus("error");setError(e.message||"Unable to synchronize.");}finally{syncInFlight.current=false;}},[]);
+ const sync=useCallback(async()=>{if(syncInFlight.current)return;syncInFlight.current=true;setStatus("syncing");try{const next={};let syncedAt=null;for(const name of ["DATABASE","DAILY REPORT","OUTAGE ADVISORY","GNOC"]){const result=await fetchSheetTab(name);next[name]=result.sheet;syncedAt=result.syncedAt||syncedAt;}setData(next);setLastSync(new Date(syncedAt||Date.now()));setStatus("online");setError("");}catch(e){setStatus("error");setError(e.message||"Unable to synchronize.");}finally{syncInFlight.current=false;}},[]);
  useEffect(()=>{sync();},[sync]); useEffect(()=>{if(!auto)return;const id=setInterval(sync,30000);return()=>clearInterval(id);},[auto,sync]); useEffect(()=>{const id=setInterval(()=>setClock(new Date()),30000);return()=>clearInterval(id);},[]);
  const db=sheetRows(data.DATABASE), gnoc=sheetRows(data.GNOC), adv=sheetRows(data["OUTAGE ADVISORY"]), daily=sheetRows(data["DAILY REPORT"]);
  const tickets=useMemo(()=>db.map((r,i)=>{const statusText=val(r,["STATUS"]);const down=val(r,["DOWNTIME","DOWN TIME","START DATE"]);const restored=val(r,["DATE RESTORED","DATE RESTORE","RESTORED DATE","UPTIME"]);return {...r,__ticket:val(r,["TICKET","TICKET ID","INTERNAL ID"])||("ROW-"+(i+1)),__status:runningStatus(statusText)?"RUNNING":completeStatus(statusText)?"COMPLETED":statusText.toUpperCase(),__type:["TYPE","OUTAGE TYPE","TYPE/PROVINCE","IMPACT"].map(name=>val(r,[name])).filter(Boolean).join(" ").toUpperCase(),__ageing:ageing(down,restored)};}),[db]);
