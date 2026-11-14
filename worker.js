@@ -87,10 +87,11 @@ async function googleAccessToken(env) {
 }
 
 function parseDashboardColumns(valueRanges) {
-  const ticketValues = valueRanges[0]?.values || [];
-  const statusValues = valueRanges[1]?.values || [];
-  const typeValues = valueRanges[2]?.values || [];
-  const rowCount = Math.max(ticketValues.length, statusValues.length, typeValues.length);
+  const ticketValues = valueRanges[0]?.values || [];   // A: ticket number
+  const statusValues = valueRanges[1]?.values || [];   // B: status
+  const provinceValues = valueRanges[2]?.values || []; // E: type/province display
+  const typeValues = valueRanges[3]?.values || [];     // H: BB / OLT classification
+  const rowCount = Math.max(ticketValues.length, statusValues.length, provinceValues.length, typeValues.length);
   const rows = [];
   const counts = { BB: 0, OLT: 0, LCP: 0, NAP: 0 };
   for (let i = 1; i < rowCount; i++) {
@@ -105,12 +106,12 @@ function parseDashboardColumns(valueRanges) {
     rows.push({
       "TICKET NUMBER": String(ticketValues[i]?.[0] ?? "").trim(),
       STATUS: status,
-      "TYPE/PROVINCE": type,
+      TYPE: type,
+      "TYPE/PROVINCE": String(provinceValues[i]?.[0] ?? "").trim(),
     });
   }
-  return { headers: ["TICKET NUMBER", "STATUS", "TYPE/PROVINCE"], rows, counts };
+  return { headers: ["TICKET NUMBER", "STATUS", "TYPE", "TYPE/PROVINCE"], rows, counts };
 }
-
 function parseSheet(values) {
   const headers = (values[0] || []).map((value, index) =>
     String(value || "Column " + (index + 1)).trim()
@@ -181,7 +182,7 @@ async function loadSheetsFromGoogle(request, env) {
       if (view === "dashboard") {
         const escapedName = actualName.replace(/'/g, "''");
         const params = new URLSearchParams();
-        for (const column of ["A:A", "B:B", "H:H"]) {
+        for (const column of ["A:A", "B:B", "E:E", "H:H"]) {
           params.append("ranges", "'" + escapedName + "'!" + column);
         }
         params.set("valueRenderOption", "FORMATTED_VALUE");
