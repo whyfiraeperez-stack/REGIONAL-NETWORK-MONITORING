@@ -3,8 +3,8 @@ const ALLOWED = ["DATABASE", "DAILY REPORT", "OUTAGE ADVISORY", "GNOC"];
 const b64url = (bytes) =>
   btoa(String.fromCharCode(...new Uint8Array(bytes)))
     .replace(/=/g, "")
-    .replace(/\\+/g, "-")
-    .replace(/\\//g, "_");
+    .replaceAll("+", "-")
+    .replaceAll("/", "_");
 
 const enc = (value) => b64url(new TextEncoder().encode(value));
 
@@ -12,7 +12,7 @@ function pemBytes(pem) {
   const body = pem
     .replace(/-----BEGIN PRIVATE KEY-----/g, "")
     .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/\\s/g, "");
+    .replace(/\s/g, "");
   return Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
 }
 
