@@ -89,8 +89,8 @@ async function googleAccessToken(env) {
 function parseDashboardColumns(valueRanges) {
   const ticketValues = valueRanges[0]?.values || [];   // A: ticket number
   const statusValues = valueRanges[1]?.values || [];   // B: status
-  const provinceValues = valueRanges[2]?.values || []; // E: type/province display
-  const typeValues = valueRanges[3]?.values || [];     // H: BB / OLT classification
+  const provinceValues = valueRanges[3]?.values || []; // E: type/province display
+  const typeValues = valueRanges[6]?.values || [];     // H: BB / OLT classification
   const countColumns = ["A", "B", "D", "E", "F", "G", "H", "I", "J", "Q"];
   const columnCounts = Object.fromEntries(countColumns.map((column, index) => [
     column,
@@ -190,7 +190,7 @@ async function loadSheetsFromGoogle(request, env) {
       if (view === "dashboard") {
         const escapedName = actualName.replace(/'/g, "''");
         const params = new URLSearchParams();
-        for (const column of ["A:A", "B:B", "E:E", "H:H", "D:D", "F:F", "G:G", "I:I", "J:J", "Q:Q"]) {
+        for (const column of ["A:A", "B:B", "D:D", "E:E", "F:F", "G:G", "H:H", "I:I", "J:J", "Q:Q"]) {
           params.append("ranges", "'" + escapedName + "'!" + column);
         }
         params.set("valueRenderOption", "FORMATTED_VALUE");
