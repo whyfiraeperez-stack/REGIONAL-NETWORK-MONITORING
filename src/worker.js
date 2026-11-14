@@ -97,6 +97,15 @@ function parseDashboardColumns(valueRanges) {
     (valueRanges[index]?.values || []).slice(1).reduce((count, row) =>
       count + (String(row?.[0] ?? "").trim() !== "" ? 1 : 0), 0),
   ]));
+  // Q contains the affected-client quantity per ticket: show the total clients,
+  // not the number of rows with a value. Values are read from the exact Q:Q range.
+  columnCounts.Q = (valueRanges[9]?.values || []).slice(1).reduce((total, row) => {
+    const raw = String(row?.[0] ?? "").trim();
+    if (!raw) return total;
+    const normalized = raw.replace(/,/g, "").replace(/\s*(clients?|subscribers?|subs)$/i, "").trim();
+    const amount = Number(normalized);
+    return Number.isFinite(amount) && amount >= 0 ? total + amount : total;
+  }, 0);
   const rowCount = Math.max(ticketValues.length, statusValues.length, provinceValues.length, typeValues.length);
   const rows = [];
   const counts = { BB: 0, OLT: 0, LCP: 0, NAP: 0 };
